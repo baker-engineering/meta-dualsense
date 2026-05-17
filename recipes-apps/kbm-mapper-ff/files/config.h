@@ -29,9 +29,13 @@ struct config {
     /* Burst-on-hold: while an action's source input is held, oscillate the
      * reported action at burst_hz[a] Hz with burst_duty[a] high-time fraction.
      * burst_hz <= 0 disables burst for that action (the default — hold acts
-     * like a normal sustained press). Indexed by DS action id. */
+     * like a normal sustained press). burst_jitter[a] in [0, 1] adds a
+     * deterministic per-cycle perturbation of +/- (jitter * 100)% to both
+     * the cycle length and the duty fraction, so a held burst does not
+     * present a perfectly periodic input pattern. Indexed by DS action id. */
     double burst_hz[DS_ACT_MAX];
     double burst_duty[DS_ACT_MAX];
+    double burst_jitter[DS_ACT_MAX];
 
     /* Mode-toggle hotkey: list of Linux KEY_* codes that must all be held
      * simultaneously for >=1s to trigger a switch between emulation and

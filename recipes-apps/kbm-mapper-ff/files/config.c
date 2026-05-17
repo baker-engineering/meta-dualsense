@@ -156,7 +156,7 @@ int config_load(struct config *c, const char *path) {
             }
         }
         else if (strncmp(k,"burst.",6)==0) {
-            /* "burst.<action>.hz" or "burst.<action>.duty" */
+            /* "burst.<action>.{hz,duty,jitter}" */
             char *dot = strrchr(k + 6, '.');
             if (!dot) {
                 fprintf(stderr, "kbm-mapper: %s:%d: bad burst key '%s'\n", path, lineno, k);
@@ -170,6 +170,11 @@ int config_load(struct config *c, const char *path) {
                     c->burst_hz[act] = atof(v);
                 } else if (strcmp(field,"duty")==0) {
                     c->burst_duty[act] = atof(v);
+                } else if (strcmp(field,"jitter")==0) {
+                    double j = atof(v);
+                    if (j < 0) j = 0;
+                    if (j > 1) j = 1;
+                    c->burst_jitter[act] = j;
                 } else {
                     fprintf(stderr, "kbm-mapper: %s:%d: unknown burst field '%s'\n", path, lineno, field);
                 }

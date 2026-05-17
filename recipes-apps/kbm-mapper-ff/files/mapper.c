@@ -38,9 +38,28 @@ static void burst_tick(struct mapper *m, int64_t now_ns) {
     }
 }
 
+/* Deterministic per-cycle jitter: derive a stable [-1, 1] perturbation from
+ * a cycle index. Same cycle index always produces the same value, so
+ * is_active stays a pure function of (action, now_ns). xorshift-style
+ * mixing is enough — we are smoothing a pattern, not rolling dice. */
+static double burst_cycle_jitter(int64_t cycle_idx, uint64_t salt) {
+    uint64_t x = (uint64_t)cycle_idx * 0x9e3779b97f4a7c15ULL ^ salt;
+    x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27; x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    int64_t s = (int64_t)x;
+    return (double)s / (double)INT64_MAX;
+}
+
 /* is_active is is_pressed gated by burst-on-hold: if burst_hz[a] > 0 and the
  * action is currently held, this returns true only during the high portion of
  * each oscillator cycle. burst_hz <= 0 is treated as a normal sustained press.
+ *
+ * If burst_jitter[a] > 0, per-cycle cycle length and duty fraction are each
+ * perturbed by +/- (jitter * 100)%. The result still oscillates around the
+ * configured rate but does not present a perfectly periodic pattern; anti-
+ * cheat heuristics that look for machine-like input cadences are less likely
+ * to flag a jittered burst than a clockwork one.
  *
  * Used only for digital actions (buttons + analog triggers reported digitally).
  * Stick directions go through is_pressed because oscillating a stick axis
@@ -52,12 +71,42 @@ static bool is_active(const struct mapper *m, enum ds_action a, int64_t now_ns) 
     double duty = m->cfg->burst_duty[a];
     if (duty <= 0) duty = 0.5;
     if (duty >  1) duty = 1;
-    int64_t cycle_ns = (int64_t)(1e9 / hz);
-    if (cycle_ns <= 0) return true;
+    int64_t base_cycle_ns = (int64_t)(1e9 / hz);
+    if (base_cycle_ns <= 0) return true;
     int64_t since = now_ns - m->pressed_since_ns[a];
     if (since < 0) since = 0;
-    int64_t phase = since % cycle_ns;
-    return phase < (int64_t)(cycle_ns * duty);
+
+    double jitter = m->cfg->burst_jitter[a];
+    if (jitter <= 0) {
+        int64_t phase = since % base_cycle_ns;
+        return phase < (int64_t)(base_cycle_ns * duty);
+    }
+
+    /* Walk forward through cycles, accumulating jittered widths. The
+     * action id is salted in so different actions with the same hz get
+     * independent patterns. Bound the loop to keep cost predictable even
+     * on a multi-minute trigger hold; after 4096 cycles fall back to
+     * nominal phase (which on an 8 Hz burst is ~8.5 minutes of sustained
+     * fire, far longer than any real engagement). */
+    uint64_t salt = (uint64_t)a * 0x100000001b3ULL;
+    int64_t cum = 0;
+    for (int64_t ci = 0; ci < 4096; ci++) {
+        double rc = burst_cycle_jitter(ci, salt);
+        int64_t this_cycle = (int64_t)(base_cycle_ns * (1.0 + rc * jitter));
+        if (this_cycle <= 0) this_cycle = 1;
+        int64_t next_cum = cum + this_cycle;
+        if (since < next_cum) {
+            double rd = burst_cycle_jitter(ci, salt ^ 0xa5a5a5a5a5a5a5a5ULL);
+            double effective_duty = duty * (1.0 + rd * jitter);
+            if (effective_duty < 0.05) effective_duty = 0.05;
+            if (effective_duty > 0.95) effective_duty = 0.95;
+            int64_t on_time = (int64_t)(this_cycle * effective_duty);
+            return (since - cum) < on_time;
+        }
+        cum = next_cum;
+    }
+    int64_t phase = since % base_cycle_ns;
+    return phase < (int64_t)(base_cycle_ns * duty);
 }
 
 void mapper_init(struct mapper *m, const struct config *cfg) {
