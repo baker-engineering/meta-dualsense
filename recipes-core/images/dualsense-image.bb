@@ -3,7 +3,7 @@ LICENSE = "MIT"
 
 inherit core-image
 
-IMAGE_FEATURES += "ssh-server-dropbear tools-debug debug-tweaks"
+IMAGE_FEATURES += "ssh-server-dropbear debug-tweaks"
 
 IMAGE_INSTALL = " \
     packagegroup-core-boot \
