@@ -1,0 +1,7 @@
+build/
+shared/
+.kas-container
+build.log
+*.swp
+*~
+.vscode/

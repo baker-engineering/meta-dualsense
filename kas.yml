@@ -1,0 +1,74 @@
+header:
+  version: 14
+
+machine: beaglebone-yocto
+distro: poky
+target: dualsense-image
+
+repos:
+  meta-dualsense:
+    path: .
+
+  poky:
+    url: https://git.yoctoproject.org/git/poky
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    branch: scarthgap
+    layers:
+      meta-oe:
+      meta-networking:
+      meta-python:
+
+  meta-arm:
+    url: https://git.yoctoproject.org/git/meta-arm
+    branch: scarthgap
+    layers:
+      meta-arm:
+      meta-arm-toolchain:
+
+  meta-ti:
+    url: https://git.yoctoproject.org/git/meta-ti
+    branch: scarthgap
+    layers:
+      meta-ti-bsp:
+      meta-ti-extras:
+
+bblayers_conf_header:
+  standard: |
+    POKY_BBLAYERS_CONF_VERSION = "2"
+    BBPATH = "${TOPDIR}"
+    BBFILES ?= ""
+
+local_conf_header:
+  standard: |
+    CONF_VERSION = "2"
+    PACKAGE_CLASSES = "package_ipk"
+    USER_CLASSES ?= "buildstats"
+    INHERIT += "rm_work"
+
+    # kas-container mounts the workspace at /work; reference shared caches
+    # via that mount so paths resolve identically inside the build container.
+    DL_DIR = "/work/shared/downloads"
+    SSTATE_DIR = "/work/shared/sstate-cache"
+
+    BB_NUMBER_THREADS = "16"
+    PARALLEL_MAKE = "-j 16"
+
+    # PREEMPT_RT patches are applied to the BSP's stock linux-yocto via the
+    # KERNEL_FEATURES kernel-cache fragment, see meta-dualsense-gadget
+    # recipes-kernel/linux/linux-yocto_%.bbappend.
+
+    INIT_MANAGER = "systemd"
+    DISTRO_FEATURES:append = " systemd"
+    DISTRO_FEATURES:remove = "sysvinit"
+    VIRTUAL-RUNTIME_init_manager = "systemd"
+    VIRTUAL-RUNTIME_initscripts = ""
+
+    IMAGE_FSTYPES = "wic wic.bmap tar.xz"
+    EXTRA_IMAGE_FEATURES:append = " ssh-server-dropbear debug-tweaks tools-debug"
