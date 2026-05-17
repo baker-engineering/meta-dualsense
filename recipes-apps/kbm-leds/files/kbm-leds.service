@@ -1,0 +1,16 @@
+[Unit]
+Description=BBB user-LED animated status indicator
+After=basic.target
+DefaultDependencies=yes
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kbm-leds
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
