@@ -1,0 +1,15 @@
+[Unit]
+Description=Passthrough USB gadget setup (HID keyboard + mouse via configfs)
+DefaultDependencies=no
+After=sysinit.target local-fs.target systemd-modules-load.service
+Before=basic.target shutdown.target kbm-passthrough.service
+Conflicts=shutdown.target dualsense-ffs.service dualsense-ffsd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/kbm-passthrough-setup
+ExecStopPost=-/bin/sh -c 'echo "" > /sys/kernel/config/usb_gadget/kbm/UDC 2>/dev/null || true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
