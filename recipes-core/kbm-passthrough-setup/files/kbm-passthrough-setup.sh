@@ -34,9 +34,9 @@ echo 0x00   > "$GADGET/bDeviceSubClass"
 echo 0x00   > "$GADGET/bDeviceProtocol"
 
 mkdir -p "$GADGET/strings/0x409"
-echo "meta-dualsense-ds4w" > "$GADGET/strings/0x409/manufacturer"
-echo "BBB Keyboard+Mouse"  > "$GADGET/strings/0x409/product"
-echo "00000000"            > "$GADGET/strings/0x409/serialnumber"
+echo "Baker Engineering"           > "$GADGET/strings/0x409/manufacturer"
+echo "DualSense Keyboard and Mouse" > "$GADGET/strings/0x409/product"
+echo "00000000"                    > "$GADGET/strings/0x409/serialnumber"
 
 # Boot keyboard: 8 byte report (1 modifiers, 1 reserved, 6 keys).
 mkdir -p "$GADGET/functions/hid.usb0"
@@ -60,7 +60,7 @@ printf '\x05\x01\x09\x02\xa1\x01\x09\x01\xa1\x00\x05\x09\x19\x01\x29\x03\x15\x00
     > "$GADGET/functions/hid.usb1/report_desc"
 
 mkdir -p "$GADGET/configs/c.1/strings/0x409"
-echo "Keyboard+Mouse" > "$GADGET/configs/c.1/strings/0x409/configuration"
+echo "Keyboard and Mouse" > "$GADGET/configs/c.1/strings/0x409/configuration"
 echo 250              > "$GADGET/configs/c.1/MaxPower"
 echo 0xC0             > "$GADGET/configs/c.1/bmAttributes"
 
