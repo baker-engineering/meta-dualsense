@@ -1,0 +1,14 @@
+[Unit]
+Description=DualSense FunctionFS USB gadget setup (configfs + functionfs mount)
+DefaultDependencies=no
+After=sysinit.target local-fs.target systemd-modules-load.service
+Before=basic.target shutdown.target dualsense-ffsd.service
+Conflicts=shutdown.target kbm-passthrough-setup.service kbm-passthrough.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/dualsense-ffs
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
