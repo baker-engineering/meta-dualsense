@@ -133,6 +133,54 @@
 </section>
 
 <section class="card">
+  <h2>Recoil &amp; sensitivity</h2>
+  <p class="hint">
+    While the recoil action is held the daemon biases the right stick by
+    (recoil X, recoil Y) to counter games' recoil. Sensitivity scales drop
+    the right stick output when the ADS or fire actions are held, so the
+    camera is less twitchy during precision aim or spray control.
+  </p>
+  <form id="recoil-form">
+    <label class="slider">
+      <span>recoil.action</span>
+      <select name="recoil_action" id="recoil-action">
+        <option value="">(disabled)</option>
+      </select>
+    </label>
+    <label class="slider">
+      <span>recoil.x  (left -, right +)</span>
+      <input type="range" name="recoil_x" min="-0.3" max="0.3" step="0.01">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>recoil.y  (up -, down +)</span>
+      <input type="range" name="recoil_y" min="-0.3" max="0.3" step="0.01">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>fire.sens_scale</span>
+      <input type="range" name="fire_sens_scale" min="0.3" max="2.0" step="0.05">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>ads.action</span>
+      <select name="ads_action" id="ads-action">
+        <option value="">(disabled)</option>
+      </select>
+    </label>
+    <label class="slider">
+      <span>ads.sens_scale</span>
+      <input type="range" name="ads_sens_scale" min="0.3" max="2.0" step="0.05">
+      <output></output>
+    </label>
+    <div class="row">
+      <button type="submit" class="btn">Apply</button>
+      <button type="button" class="btn ghost" id="btn-recoil-reset">Defaults</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
   <h2>Burst-on-hold</h2>
   <p class="hint">
     Oscillate a button or trigger while its source input is held. Useful for

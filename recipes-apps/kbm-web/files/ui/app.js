@@ -125,11 +125,41 @@ async function loadConfig() {
       const inp = document.querySelector(`input[name="${k}"]`);
       if (inp) { inp.value = conf.tuning[k]; inp.nextElementSibling.textContent = inp.value; }
     }
+    populateRecoilUI();
     renderBindings();
     renderBursts();
     renderHotkey();
   } catch (e) {
     console.error('config:', e);
+  }
+}
+
+// Populate the Recoil & sensitivity card from conf.tuning. Action dropdowns
+// pull options from the same ACTIONS list the binding picker uses, with the
+// Xbox glyph in parentheses for orientation.
+function populateRecoilUI() {
+  for (const id of ['recoil-action','ads-action']) {
+    const sel = document.getElementById(id);
+    if (sel.options.length <= 1) {
+      for (const a of ACTIONS) {
+        const o = document.createElement('option');
+        o.value = a;
+        o.textContent = actionLabel(a);
+        sel.appendChild(o);
+      }
+    }
+  }
+  document.getElementById('recoil-action').value = conf.tuning.recoil_action || '';
+  document.getElementById('ads-action').value    = conf.tuning.ads_action    || '';
+  const sliders = {
+    recoil_x:        conf.tuning.recoil_x        ?? 0,
+    recoil_y:        conf.tuning.recoil_y        ?? 0,
+    fire_sens_scale: conf.tuning.fire_sens_scale ?? 1.0,
+    ads_sens_scale:  conf.tuning.ads_sens_scale  ?? 1.0,
+  };
+  for (const [k, v] of Object.entries(sliders)) {
+    const inp = document.querySelector(`input[name="${k}"]`);
+    if (inp) { inp.value = v; inp.nextElementSibling.textContent = inp.value; }
   }
 }
 
@@ -149,11 +179,32 @@ $('tuning-form').addEventListener('submit', async e => {
 
 $('btn-reset').addEventListener('click', () => {
   if (!conf) return;
-  conf.tuning = { window_ms: 6, curve_exp: 2.0, anti_deadzone: 0.10, outer_sat: 0.97, sens_counts_ms: 8.0, debt_drain: 0.05 };
-  for (const k in conf.tuning) {
+  Object.assign(conf.tuning, { window_ms: 6, curve_exp: 2.0, anti_deadzone: 0.10, outer_sat: 0.97, sens_counts_ms: 8.0, debt_drain: 0.05 });
+  for (const k of ['window_ms','curve_exp','anti_deadzone','outer_sat','sens_counts_ms','debt_drain']) {
     const inp = document.querySelector(`input[name="${k}"]`);
     if (inp) { inp.value = conf.tuning[k]; inp.nextElementSibling.textContent = inp.value; }
   }
+});
+
+$('recoil-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!conf) return;
+  conf.tuning.recoil_action    = document.getElementById('recoil-action').value;
+  conf.tuning.ads_action       = document.getElementById('ads-action').value;
+  conf.tuning.recoil_x         = parseFloat(document.querySelector('input[name="recoil_x"]').value);
+  conf.tuning.recoil_y         = parseFloat(document.querySelector('input[name="recoil_y"]').value);
+  conf.tuning.fire_sens_scale  = parseFloat(document.querySelector('input[name="fire_sens_scale"]').value);
+  conf.tuning.ads_sens_scale   = parseFloat(document.querySelector('input[name="ads_sens_scale"]').value);
+  await postConfig();
+});
+
+$('btn-recoil-reset').addEventListener('click', () => {
+  if (!conf) return;
+  Object.assign(conf.tuning, {
+    recoil_action: '', recoil_x: 0, recoil_y: 0,
+    ads_action: '', ads_sens_scale: 1.0, fire_sens_scale: 1.0,
+  });
+  populateRecoilUI();
 });
 
 $('btn-reload').addEventListener('click', () => { loadStatus(); loadConfig(); });
