@@ -1,0 +1,15 @@
+[Unit]
+Description=DualSense web configurator (kbm-web)
+After=network.target dualsense-ffsd.service
+Wants=dualsense-ffsd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kbm-web
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DualSense</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>DualSense</h1>
+    <small id="version">—</small>
+  </div>
+  <div class="conn">
+    <span id="conn-dot" class="dot stale"></span>
+    <span id="conn-text">connecting</span>
+  </div>
+</header>
+
+<main>
+
+<section class="card">
+  <h2>Profiles</h2>
+  <p class="hint">
+    Each profile is a complete snapshot of tuning, bindings, and burst settings.
+    Switching activates the profile and the daemon hot-reloads instantly.
+    Slider/binding edits persist into the active profile automatically.
+  </p>
+  <table id="profiles">
+    <thead><tr><th>Name</th><th>Description</th><th>Modified</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row">
+    <input id="prof-new-name" placeholder="New profile name">
+    <input id="prof-new-desc" placeholder="Description (optional)">
+    <button class="btn" id="btn-prof-new">+ New from active</button>
+    <label class="btn ghost" for="prof-import-file">Import…</label>
+    <input id="prof-import-file" type="file" accept=".conf,text/plain" hidden>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Mode-toggle hotkey</h2>
+  <p class="hint">
+    Chord that triggers a switch between emulation and passthrough when held
+    for one second. The keys are detected on the BBB-attached keyboard, so
+    you can flip out of emulation mode without needing the webapp focused.
+  </p>
+  <div class="row">
+    <code id="hotkey-current">—</code>
+    <button class="btn ghost" id="btn-hotkey-capture">Capture chord</button>
+    <button class="btn" id="btn-hotkey-save" disabled>Save</button>
+    <span id="hotkey-status" class="hint"></span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Mode</h2>
+  <p class="hint">
+    <strong>Emulation</strong>: the BBB presents as a DualSense gamepad; the
+    plugged-in keyboard and mouse are translated to controller input.
+    <strong>Passthrough</strong>: the BBB presents as a USB keyboard + mouse;
+    the plugged-in keyboard and mouse appear natively on the host.
+  </p>
+  <div class="row mode-row">
+    <label><input type="radio" name="mode" value="emulation"> Emulation</label>
+    <label><input type="radio" name="mode" value="passthrough"> Passthrough</label>
+    <label><input type="radio" name="mode" value="off"> Off</label>
+    <span id="mode-current" class="hint">current: —</span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Status</h2>
+  <dl id="status">
+    <dt>Hostname</dt>          <dd id="s-hostname">—</dd>
+    <dt>UDC</dt>               <dd id="s-udc">—</dd>
+    <dt>USB state</dt>         <dd id="s-ustate">—</dd>
+    <dt>Speed</dt>             <dd id="s-speed">—</dd>
+    <dt>/dev/hidg0</dt>        <dd id="s-hidg">—</dd>
+    <dt>Report descriptor</dt> <dd id="s-rdesc">—</dd>
+    <dt>Input devices</dt>     <dd id="s-inputs">—</dd>
+    <dt>dualsense-ffs</dt>     <dd id="s-gadget" class="svc">—</dd>
+    <dt>dualsense-ffsd</dt>    <dd id="s-mapper" class="svc">—</dd>
+  </dl>
+  <div class="row">
+    <button class="btn" data-restart="dualsense-ffs">Restart gadget</button>
+    <button class="btn" data-restart="dualsense-ffsd">Restart mapper</button>
+    <button class="btn ghost" id="btn-reload">Refresh</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Mouse → right-stick tuning</h2>
+  <form id="tuning-form">
+    <label class="slider">
+      <span>window_ms</span>
+      <input type="range" name="window_ms" min="1" max="20" step="0.5">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>curve_exp</span>
+      <input type="range" name="curve_exp" min="0.5" max="4" step="0.1">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>anti_deadzone</span>
+      <input type="range" name="anti_deadzone" min="0" max="0.3" step="0.01">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>outer_sat</span>
+      <input type="range" name="outer_sat" min="0.5" max="1" step="0.01">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>sens_counts_ms</span>
+      <input type="range" name="sens_counts_ms" min="1" max="40" step="0.5">
+      <output></output>
+    </label>
+    <label class="slider">
+      <span>debt_drain</span>
+      <input type="range" name="debt_drain" min="0" max="0.5" step="0.01">
+      <output></output>
+    </label>
+    <div class="row">
+      <button type="submit" class="btn">Apply &amp; restart</button>
+      <button type="button" class="btn ghost" id="btn-reset">Defaults</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Burst-on-hold</h2>
+  <p class="hint">
+    Oscillate a button or trigger while its source input is held. Useful for
+    recoil-control: bind fire (r2) to a burst so click-and-hold pulses the
+    trigger instead of holding it. <code>hz=0</code> disables; <code>duty</code>
+    is the fraction of each cycle the action is reported pressed (0..1,
+    default 0.5).
+  </p>
+  <table id="bursts">
+    <thead><tr><th>Action</th><th>Hz</th><th>Duty</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row add-row">
+    <select id="burst-action"></select>
+    <input id="burst-hz"   type="number" step="0.5" min="0" placeholder="hz">
+    <input id="burst-duty" type="number" step="0.05" min="0" max="1" placeholder="duty">
+    <button class="btn" id="btn-add-burst">Add / update</button>
+  </div>
+  <div class="row">
+    <button type="button" class="btn" id="btn-save-bursts">Save bursts &amp; restart</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Key / mouse mapping</h2>
+  <p class="hint">
+    Actions are named in DualSense terms (cross / circle / l2 / r2 / …).
+    Because the Windows bridge translates this gadget to a virtual Xbox 360
+    controller, in-game prompts (Warzone etc.) show the Xbox equivalents —
+    those are listed in parentheses next to each action name
+    (e.g. <code>cross (A)</code>, <code>r2 (RT)</code>).
+  </p>
+  <table id="bindings">
+    <thead><tr><th>Source</th><th>Code</th><th>Action</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row add-row">
+    <select id="b-source">
+      <option value="key">Key</option>
+      <option value="mouse">Mouse</option>
+    </select>
+    <input id="b-code" placeholder="W / SPACE / LEFT" autocapitalize="characters">
+    <button class="btn ghost" id="btn-capture" title="Press a key or mouse button on the BBB-attached device">Capture</button>
+    <select id="b-action"></select>
+    <button class="btn" id="btn-add-binding">Add</button>
+  </div>
+  <div id="capture-status" class="hint" hidden></div>
+  <div class="row">
+    <button type="button" class="btn" id="btn-save-bindings">Save bindings &amp; restart</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Controller test (live)</h2>
+  <div class="test">
+    <div class="stick">
+      <canvas id="lstick" width="160" height="160"></canvas>
+      <small>Left stick — WASD</small>
+      <div class="axval"><span id="LXv">128</span>, <span id="LYv">128</span></div>
+    </div>
+    <div class="stick">
+      <canvas id="rstick" width="160" height="160"></canvas>
+      <small>Right stick — mouse</small>
+      <div class="axval"><span id="RXv">128</span>, <span id="RYv">128</span></div>
+    </div>
+    <div class="triggers">
+      <div>L2 <span class="bar"><span id="L2bar"></span></span> <output id="L2v">0</output></div>
+      <div>R2 <span class="bar"><span id="R2bar"></span></span> <output id="R2v">0</output></div>
+    </div>
+    <div class="dpad" id="dpad"></div>
+    <div class="btns" id="buttons"></div>
+  </div>
+</section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
