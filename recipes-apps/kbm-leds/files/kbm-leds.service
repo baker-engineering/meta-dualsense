@@ -1,7 +1,12 @@
 [Unit]
 Description=BBB user-LED animated status indicator
-After=basic.target
-DefaultDependencies=yes
+# Anchored on systemd-remount-fs + systemd-udevd so the LED feedback
+# starts within ~1 s of the daemon being scheduled. This is the user's
+# earliest visual confirmation that the system is booting.
+DefaultDependencies=no
+After=systemd-remount-fs.service systemd-udevd.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
 
 [Service]
 Type=simple
@@ -13,4 +18,4 @@ StandardError=journal
 Nice=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target

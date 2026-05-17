@@ -1,8 +1,14 @@
 [Unit]
 Description=DualSense FunctionFS USB gadget setup (configfs + functionfs mount)
+# Anchor on systemd-remount-fs.service rather than local-fs.target so the
+# gadget binds as soon as / is rw. local-fs.target on this image waits up
+# to ~18 s for udev to resolve /dev/disk/by-uuid/* for the FAT boot
+# partition, which dragged the gadget visible-to-Windows time out
+# accordingly. DefaultDependencies=no skips the implicit basic.target
+# ordering chain.
 DefaultDependencies=no
-After=sysinit.target local-fs.target systemd-modules-load.service
-Before=basic.target shutdown.target dualsense-ffsd.service
+After=systemd-remount-fs.service systemd-modules-load.service
+Before=sysinit.target shutdown.target dualsense-ffsd.service
 Conflicts=shutdown.target kbm-passthrough-setup.service kbm-passthrough.service
 
 [Service]
@@ -11,4 +17,4 @@ ExecStart=/usr/bin/dualsense-ffs
 RemainAfterExit=yes
 
 [Install]
-WantedBy=basic.target
+WantedBy=sysinit.target

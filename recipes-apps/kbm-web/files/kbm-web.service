@@ -1,7 +1,14 @@
 [Unit]
 Description=DualSense web configurator (kbm-web)
-After=network.target dualsense-ffsd.service
+# Go's net/http binds 0.0.0.0:80 immediately and the listener accepts
+# connections as soon as networkd configures eth0 later in boot. We
+# don't need to wait for network.target before starting, so anchor on
+# sysinit.target alongside the gadget services.
+DefaultDependencies=no
+After=dualsense-ffsd.service systemd-remount-fs.service
 Wants=dualsense-ffsd.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
 
 [Service]
 Type=simple
@@ -12,4 +19,4 @@ StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target

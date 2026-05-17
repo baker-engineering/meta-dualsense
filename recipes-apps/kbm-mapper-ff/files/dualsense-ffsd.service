@@ -1,8 +1,15 @@
 [Unit]
 Description=DualSense FunctionFS userspace daemon (descriptor + IN/OUT/control)
+# Skip systemd-udev-settle.service: it itself blocks until the entire
+# coldplug queue drains, which dragged the daemon start out by ~10 s on
+# this image. The daemon uses inotify on /dev/input for hot-plug, so
+# any evdev nodes missing at startup are picked up later without
+# udev-settle's help.
+DefaultDependencies=no
 Requires=dualsense-ffs.service
-After=dualsense-ffs.service systemd-udev-settle.service
-Conflicts=kbm-passthrough-setup.service kbm-passthrough.service
+After=dualsense-ffs.service systemd-remount-fs.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target kbm-passthrough-setup.service kbm-passthrough.service
 
 [Service]
 Type=simple
@@ -20,4 +27,4 @@ StandardError=journal
 Nice=-10
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target
