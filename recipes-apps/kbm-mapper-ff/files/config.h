@@ -43,6 +43,27 @@ struct config {
      * disables the feature. */
     int hotkey_codes[8];
     int hotkey_n;
+
+    /* Recoil compensation: while recoil_action is held (regardless of
+     * burst phase), bias the right-stick output by (recoil_x, recoil_y)
+     * fractions of full deflection. Positive recoil_y pushes the stick
+     * down (counters games' vertical recoil that pulls the camera up).
+     * Signed recoil_x compensates for weapons with consistent left/right
+     * drift; most assault rifles have random horizontal recoil and 0 is
+     * appropriate. recoil_action = DS_ACT_NONE disables compensation. */
+    int    recoil_action;
+    double recoil_x;
+    double recoil_y;
+
+    /* Sensitivity scaling tied to action state. While ads_action is
+     * held (typically L2 / aim-down-sight), scale right-stick output
+     * by ads_sens_scale. While recoil_action is held (firing), scale
+     * by fire_sens_scale. Both default 1.0 (no scaling). Values below
+     * 1.0 make the camera more stable for precision aim; above 1.0
+     * is unusual but supported. */
+    int    ads_action;
+    double ads_sens_scale;
+    double fire_sens_scale;
 };
 
 void config_init_defaults(struct config *c);

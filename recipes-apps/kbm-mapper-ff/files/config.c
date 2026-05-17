@@ -79,6 +79,16 @@ void config_init_defaults(struct config *c) {
     c->hotkey_codes[0] = KEY_LEFTCTRL;
     c->hotkey_codes[1] = KEY_ESC;
     c->hotkey_n        = 2;
+
+    /* Recoil + sensitivity scaling: default to off (action = NONE means
+     * the feature is inert regardless of x/y or scale values). The
+     * recoil.action and ads.action keys in the conf file enable them. */
+    c->recoil_action   = DS_ACT_NONE;
+    c->recoil_x        = 0.0;
+    c->recoil_y        = 0.0;
+    c->ads_action      = DS_ACT_NONE;
+    c->ads_sens_scale  = 1.0;
+    c->fire_sens_scale = 1.0;
 }
 
 enum ds_action config_action_from_name(const char *n) {
@@ -179,6 +189,44 @@ int config_load(struct config *c, const char *path) {
                     fprintf(stderr, "kbm-mapper: %s:%d: unknown burst field '%s'\n", path, lineno, field);
                 }
             }
+        }
+        else if (strcmp(k,"recoil.action")==0) {
+            int act = config_action_from_name(v);
+            if (act == DS_ACT_NONE)
+                fprintf(stderr, "kbm-mapper: %s:%d: unknown action '%s'\n", path, lineno, v);
+            else
+                c->recoil_action = act;
+        }
+        else if (strcmp(k,"recoil.x")==0) {
+            double r = atof(v);
+            if (r < -1) r = -1;
+            if (r >  1) r =  1;
+            c->recoil_x = r;
+        }
+        else if (strcmp(k,"recoil.y")==0) {
+            double r = atof(v);
+            if (r < -1) r = -1;
+            if (r >  1) r =  1;
+            c->recoil_y = r;
+        }
+        else if (strcmp(k,"ads.action")==0) {
+            int act = config_action_from_name(v);
+            if (act == DS_ACT_NONE)
+                fprintf(stderr, "kbm-mapper: %s:%d: unknown action '%s'\n", path, lineno, v);
+            else
+                c->ads_action = act;
+        }
+        else if (strcmp(k,"ads.sens_scale")==0) {
+            double s = atof(v);
+            if (s < 0.01) s = 0.01;
+            if (s > 4.0)  s = 4.0;
+            c->ads_sens_scale = s;
+        }
+        else if (strcmp(k,"fire.sens_scale")==0) {
+            double s = atof(v);
+            if (s < 0.01) s = 0.01;
+            if (s > 4.0)  s = 4.0;
+            c->fire_sens_scale = s;
         }
         else {
             fprintf(stderr, "kbm-mapper: %s:%d: unknown key '%s'\n", path, lineno, k);

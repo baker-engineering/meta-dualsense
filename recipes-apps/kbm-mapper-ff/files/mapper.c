@@ -283,6 +283,48 @@ void mapper_build_report(struct mapper *m, uint8_t *buf, size_t len, int64_t now
     double vy = dy / dt_ms;
     mouse_to_stick(m, vx, vy, &buf[DS_OFF_RX], &buf[DS_OFF_RY]);
 
+    /* Apply sensitivity scaling tied to action state. ADS scaling (smaller
+     * stick deflection while aiming) is the standard console behavior; fire
+     * scaling makes spray control less twitchy by dampening manual mouse
+     * compensation overshoot. Composes multiplicatively when both actions
+     * are held. Operates in stick-center-relative space so scaling does
+     * not introduce a centering bias. */
+    double sens_scale = 1.0;
+    if (m->cfg->ads_action  != DS_ACT_NONE && is_pressed(m, m->cfg->ads_action))
+        sens_scale *= m->cfg->ads_sens_scale;
+    if (m->cfg->recoil_action != DS_ACT_NONE && is_pressed(m, m->cfg->recoil_action))
+        sens_scale *= m->cfg->fire_sens_scale;
+    if (sens_scale != 1.0) {
+        int rx = (int)buf[DS_OFF_RX] - 128;
+        int ry = (int)buf[DS_OFF_RY] - 128;
+        rx = (int)(rx * sens_scale);
+        ry = (int)(ry * sens_scale);
+        if (rx < -128) rx = -128; if (rx > 127) rx = 127;
+        if (ry < -128) ry = -128; if (ry > 127) ry = 127;
+        buf[DS_OFF_RX] = (uint8_t)(rx + 128);
+        buf[DS_OFF_RY] = (uint8_t)(ry + 128);
+    }
+
+    /* Recoil compensation: while the configured recoil_action is logically
+     * held (is_pressed, not is_active, so the bias is steady over a burst
+     * rather than pulsing with it) push the right stick by (recoil_x,
+     * recoil_y) fractions of full deflection. Y positive pushes down to
+     * counter games' vertical recoil. X is for weapons with a consistent
+     * left/right drift; 0 for the random-recoil case. Bias is additive on
+     * top of the player's own mouse-driven counter motion. */
+    if (m->cfg->recoil_action != DS_ACT_NONE &&
+        (m->cfg->recoil_x != 0.0 || m->cfg->recoil_y != 0.0) &&
+        is_pressed(m, m->cfg->recoil_action)) {
+        int bx = (int)(m->cfg->recoil_x * 127.0);
+        int by = (int)(m->cfg->recoil_y * 127.0);
+        int rx = (int)buf[DS_OFF_RX] + bx;
+        int ry = (int)buf[DS_OFF_RY] + by;
+        if (rx <   0) rx =   0; if (rx > 255) rx = 255;
+        if (ry <   0) ry =   0; if (ry > 255) ry = 255;
+        buf[DS_OFF_RX] = (uint8_t)rx;
+        buf[DS_OFF_RY] = (uint8_t)ry;
+    }
+
     /* Triggers: analog when active. */
     buf[DS_OFF_L2] = is_active(m, DS_ACT_L2, now_ns) ? 255 : 0;
     buf[DS_OFF_R2] = is_active(m, DS_ACT_R2, now_ns) ? 255 : 0;
