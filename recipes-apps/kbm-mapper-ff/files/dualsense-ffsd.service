@@ -1,0 +1,23 @@
+[Unit]
+Description=DualSense FunctionFS userspace daemon (descriptor + IN/OUT/control)
+Requires=dualsense-ffs.service
+After=dualsense-ffs.service systemd-udev-settle.service
+Conflicts=kbm-passthrough-setup.service kbm-passthrough.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dualsense-ffsd /etc/kbm-mapper.conf
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=kbm-mapper
+RuntimeDirectoryMode=0755
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_SYS_NICE CAP_IPC_LOCK CAP_SYS_ADMIN
+StandardOutput=journal
+StandardError=journal
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target

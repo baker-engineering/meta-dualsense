@@ -1,0 +1,4 @@
+# Expose keyboards and mice with stable symlinks for kbm-mapper to grab.
+# kbm-mapper auto-scans /dev/input/event*; the rule below just tags the
+# devices so they're easy to identify in journalctl.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{bInterfaceClass}=="03", ATTRS{bInterfaceSubClass}=="01", TAG+="kbm-mapper"
