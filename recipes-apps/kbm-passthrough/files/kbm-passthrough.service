@@ -1,0 +1,16 @@
+[Unit]
+Description=USB-host kbd+mouse passthrough to gadget HID
+Requires=kbm-passthrough-setup.service
+After=kbm-passthrough-setup.service systemd-udev-settle.service
+Conflicts=dualsense-ffs.service dualsense-ffsd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kbm-passthrough
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
