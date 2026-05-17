@@ -1,0 +1,43 @@
+From: Tyler Baker <tyler@baker.engineering>
+Subject: [PATCH] usb: musb: gadget: recover ep0 state on stray SETUPEND
+Upstream-Status: Pending
+
+When the host issues a new SETUP packet while ep0 is in a control-transfer
+stage other than TX or RX (typically STAGE_ACKWAIT, STAGE_STATUSIN, or
+STAGE_STATUSOUT), the MUSB controller raises SETUPEND. The existing handler
+only transitions TX -> STATUSOUT and RX -> STATUSIN; every other stage just
+logs an error and leaves ep0_state untouched, so the main per-stage switch
+that follows never reaches the `setup:` label and the new SETUP's RXPKTRDY
+is never consumed.
+
+This is a defense-in-depth fix. The primary reproducer on this layer fork
+was a FunctionFS daemon that blocked in write(ep1) and stopped reading
+ep0 events, which left SET_IDLE's status phase pending; Windows would
+then send GET_DESCRIPTOR(HID Report) before SET_IDLE completed and the
+controller raised SETUPEND. The daemon side has since been fixed
+(dedicated ep1 writer thread, so ep0 reads are never starved), but
+ACKWAIT can still legitimately happen and recovering it cleanly keeps the
+gadget responsive instead of needing a full re-enumeration.
+
+Reset ep0_state to STAGE_IDLE in the default case so the subsequent
+per-stage switch reaches `setup:` and processes the pending RXPKTRDY.
+
+Signed-off-by: Tyler Baker <tyler@baker.engineering>
+---
+ drivers/usb/musb/musb_gadget_ep0.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/musb/musb_gadget_ep0.c b/drivers/usb/musb/musb_gadget_ep0.c
+--- a/drivers/usb/musb/musb_gadget_ep0.c
++++ b/drivers/usb/musb/musb_gadget_ep0.c
+@@ -683,8 +683,9 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
+ 			musb->ep0_state = MUSB_EP0_STAGE_STATUSIN;
+ 			break;
+ 		default:
+-			ERR("SetupEnd came in a wrong ep0stage %s\n",
++			ERR("SetupEnd came in a wrong ep0stage %s, recovering\n",
+ 			    decode_ep0stage(musb->ep0_state));
++			musb->ep0_state = MUSB_EP0_STAGE_IDLE;
+ 		}
+ 		csr = musb_readw(regs, MUSB_CSR0);
+ 		/* NOTE:  request may need completion */

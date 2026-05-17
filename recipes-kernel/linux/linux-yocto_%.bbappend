@@ -2,6 +2,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI:append = " \
     file://dualsense-gadget.cfg \
+    file://musb-ep0-setupend-recovery.patch \
 "
 
 # PREEMPT_RT is not enabled in this build. The yocto-kernel-cache for the
