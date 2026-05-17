@@ -39,6 +39,22 @@ type Tuning struct {
 	OuterSat     float64 `json:"outer_sat"`
 	SensCountsMs float64 `json:"sens_counts_ms"`
 	DebtDrain    float64 `json:"debt_drain"`
+
+	// Recoil compensation: while RecoilAction is held the daemon adds a
+	// constant bias (RecoilX, RecoilY) to the right stick. Action names
+	// match the daemon's action vocabulary ("r2", "l2", etc.). Empty
+	// RecoilAction disables compensation.
+	RecoilAction string  `json:"recoil_action"`
+	RecoilX      float64 `json:"recoil_x"`
+	RecoilY      float64 `json:"recoil_y"`
+
+	// Sensitivity scaling tied to action state. While AdsAction (typically
+	// "l2") is held, right-stick output is scaled by AdsSensScale. While
+	// RecoilAction is held, it is scaled by FireSensScale. Both default
+	// to 1.0 (no scaling).
+	AdsAction     string  `json:"ads_action"`
+	AdsSensScale  float64 `json:"ads_sens_scale"`
+	FireSensScale float64 `json:"fire_sens_scale"`
 }
 
 type Binding struct {
@@ -54,6 +70,11 @@ type Burst struct {
 	Action string  `json:"action"`
 	Hz     float64 `json:"hz"`
 	Duty   float64 `json:"duty"`
+	// Jitter in [0, 1]: per-cycle perturbation of cycle length and duty
+	// by +/- (jitter * 100)%. Makes a held burst non-periodic so it does
+	// not present a machine-clean cadence to anti-cheat heuristics. 0
+	// disables (clockwork burst).
+	Jitter float64 `json:"jitter"`
 }
 
 type Config struct {
@@ -84,6 +105,8 @@ var (
 	defaultTuning = Tuning{
 		WindowMs: 6, CurveExp: 2.0, AntiDeadzone: 0.10,
 		OuterSat: 0.97, SensCountsMs: 8.0, DebtDrain: 0.05,
+		RecoilAction: "", RecoilX: 0, RecoilY: 0,
+		AdsAction: "", AdsSensScale: 1.0, FireSensScale: 1.0,
 	}
 	buildVersion = "dev"
 )
@@ -262,13 +285,25 @@ func loadConfig() (*Config, error) {
 			c.Tuning.SensCountsMs = parseF(v)
 		case "debt_drain":
 			c.Tuning.DebtDrain = parseF(v)
+		case "recoil.action":
+			c.Tuning.RecoilAction = strings.ToLower(strings.TrimSpace(v))
+		case "recoil.x":
+			c.Tuning.RecoilX = parseF(v)
+		case "recoil.y":
+			c.Tuning.RecoilY = parseF(v)
+		case "ads.action":
+			c.Tuning.AdsAction = strings.ToLower(strings.TrimSpace(v))
+		case "ads.sens_scale":
+			c.Tuning.AdsSensScale = parseF(v)
+		case "fire.sens_scale":
+			c.Tuning.FireSensScale = parseF(v)
 		default:
 			if rest, ok := strings.CutPrefix(k, "key."); ok {
 				c.Bindings = append(c.Bindings, Binding{Source: "key", Code: rest, Action: v})
 			} else if rest, ok := strings.CutPrefix(k, "mouse."); ok {
 				c.Bindings = append(c.Bindings, Binding{Source: "mouse", Code: rest, Action: v})
 			} else if rest, ok := strings.CutPrefix(k, "burst."); ok {
-				// "burst.<action>.<field>", field in {hz, duty}
+				// "burst.<action>.<field>", field in {hz, duty, jitter}
 				dot := strings.LastIndexByte(rest, '.')
 				if dot < 0 {
 					continue
@@ -281,6 +316,8 @@ func loadConfig() (*Config, error) {
 					b.Hz = parseF(v)
 				case "duty":
 					b.Duty = parseF(v)
+				case "jitter":
+					b.Jitter = parseF(v)
 				}
 			} else if k == "hotkey.mode_toggle" {
 				c.Hotkey = nil
@@ -346,6 +383,28 @@ func saveConfig(c *Config) error {
 	fmt.Fprintf(&b, "outer_sat=%g\n", c.Tuning.OuterSat)
 	fmt.Fprintf(&b, "sens_counts_ms=%g\n", c.Tuning.SensCountsMs)
 	fmt.Fprintf(&b, "debt_drain=%g\n", c.Tuning.DebtDrain)
+	// Recoil + sensitivity-scale block. Each line is emitted independently
+	// when it has a meaningful (non-default) value so an action selection
+	// is not silently dropped because its associated magnitudes are still
+	// at defaults.
+	if c.Tuning.RecoilAction != "" {
+		fmt.Fprintf(&b, "recoil.action=%s\n", c.Tuning.RecoilAction)
+	}
+	if c.Tuning.RecoilX != 0 {
+		fmt.Fprintf(&b, "recoil.x=%g\n", c.Tuning.RecoilX)
+	}
+	if c.Tuning.RecoilY != 0 {
+		fmt.Fprintf(&b, "recoil.y=%g\n", c.Tuning.RecoilY)
+	}
+	if c.Tuning.AdsAction != "" {
+		fmt.Fprintf(&b, "ads.action=%s\n", c.Tuning.AdsAction)
+	}
+	if c.Tuning.AdsSensScale > 0 && c.Tuning.AdsSensScale != 1.0 {
+		fmt.Fprintf(&b, "ads.sens_scale=%g\n", c.Tuning.AdsSensScale)
+	}
+	if c.Tuning.FireSensScale > 0 && c.Tuning.FireSensScale != 1.0 {
+		fmt.Fprintf(&b, "fire.sens_scale=%g\n", c.Tuning.FireSensScale)
+	}
 	b.WriteString("\n")
 	for _, bd := range c.Bindings {
 		if bd.Source != "key" && bd.Source != "mouse" {
@@ -360,6 +419,9 @@ func saveConfig(c *Config) error {
 		fmt.Fprintf(&b, "burst.%s.hz=%g\n", br.Action, br.Hz)
 		if br.Duty > 0 {
 			fmt.Fprintf(&b, "burst.%s.duty=%g\n", br.Action, br.Duty)
+		}
+		if br.Jitter > 0 {
+			fmt.Fprintf(&b, "burst.%s.jitter=%g\n", br.Action, br.Jitter)
 		}
 	}
 	if len(c.Hotkey) > 0 {
