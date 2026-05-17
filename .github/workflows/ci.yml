@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main, scarthgap]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs for the same ref to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parse:
+    name: parse (${{ matrix.poky_branch }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        poky_branch: [scarthgap]
+    steps:
+      - name: Checkout meta-dualsense
+        uses: actions/checkout@v4
+        with:
+          path: meta-dualsense
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Cache poky checkout
+        uses: actions/cache@v4
+        with:
+          path: poky
+          key: poky-${{ matrix.poky_branch }}-${{ hashFiles('meta-dualsense/conf/layer.conf') }}
+          restore-keys: |
+            poky-${{ matrix.poky_branch }}-
+
+      - name: Clone poky
+        run: |
+          if [ ! -d poky/.git ]; then
+            git clone --depth 1 --branch ${{ matrix.poky_branch }} \
+              https://git.yoctoproject.org/poky poky
+          else
+            git -C poky fetch --depth 1 origin ${{ matrix.poky_branch }}
+            git -C poky checkout -B ${{ matrix.poky_branch }} origin/${{ matrix.poky_branch }}
+          fi
+
+      - name: Clone meta-openembedded
+        run: |
+          git clone --depth 1 --branch ${{ matrix.poky_branch }} \
+            https://git.openembedded.org/meta-openembedded meta-openembedded
+
+      - name: Clone meta-arm
+        run: |
+          git clone --depth 1 --branch ${{ matrix.poky_branch }} \
+            https://git.yoctoproject.org/git/meta-arm meta-arm
+
+      - name: Clone meta-ti
+        run: |
+          git clone --depth 1 --branch ${{ matrix.poky_branch }} \
+            https://git.yoctoproject.org/git/meta-ti meta-ti
+
+      - name: Install Yocto host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gawk wget git diffstat unzip texinfo gcc build-essential chrpath \
+            socat cpio python3 python3-pip python3-pexpect xz-utils debianutils \
+            iputils-ping python3-git python3-jinja2 python3-subunit zstd liblz4-tool \
+            file locales libacl1
+          sudo locale-gen en_US.UTF-8
+
+      - name: Parse the layer
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          set -eo pipefail
+          cd poky
+          source oe-init-build-env build
+          cat >> conf/local.conf <<'LOCAL'
+          MACHINE = "beaglebone-yocto"
+          BB_NUMBER_THREADS = "2"
+          PARALLEL_MAKE = "-j 2"
+          INHERIT += "rm_work"
+          CONF_VERSION = "2"
+          LOCAL
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-openembedded/meta-oe"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-openembedded/meta-python"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-openembedded/meta-networking"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-arm/meta-arm-toolchain"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-arm/meta-arm"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-ti/meta-ti-bsp"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-ti/meta-ti-extras"
+          bitbake-layers add-layer "$GITHUB_WORKSPACE/meta-dualsense"
+          bitbake-layers show-layers
+          bitbake -p
+
+      - name: Parse-build each recipe
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          set -eo pipefail
+          cd poky
+          source oe-init-build-env build
+          for r in dualsense-ffs kbm-mapper-ff kbm-passthrough-setup \
+                   kbm-passthrough kbm-web kbm-leds dualsense-image; do
+            bitbake -n "$r"
+          done

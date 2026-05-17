@@ -1,0 +1,64 @@
+name: nightly
+
+on:
+  schedule:
+    # 04:17 UTC daily. Off the hour so we don't hammer github.com or
+    # cdn.kernel.org alongside everyone else.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+# Don't pile up nightly runs if one is already in progress.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: image (${{ matrix.poky_branch }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        poky_branch: [scarthgap]
+    steps:
+      - name: Checkout meta-dualsense at matching branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.poky_branch == 'scarthgap' && 'scarthgap' || 'main' }}
+          path: meta-dualsense
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Install Docker (already present, just version-stamp)
+        run: docker version
+
+      - name: Cache kas downloads + sstate
+        uses: actions/cache@v4
+        with:
+          path: |
+            meta-dualsense/shared/downloads
+            meta-dualsense/shared/sstate-cache
+          key: kas-${{ matrix.poky_branch }}-${{ hashFiles('meta-dualsense/kas.yml') }}
+          restore-keys: |
+            kas-${{ matrix.poky_branch }}-
+
+      - name: Build image with kas-container
+        run: |
+          cd meta-dualsense
+          ./build.sh
+
+      - name: Upload wic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dualsense-image-${{ matrix.poky_branch }}
+          path: |
+            meta-dualsense/build/tmp/deploy/images/beaglebone-yocto/*.wic
+            meta-dualsense/build/tmp/deploy/images/beaglebone-yocto/*.wic.bmap
+            meta-dualsense/build/tmp/deploy/images/beaglebone-yocto/*.manifest
+          retention-days: 14
+          if-no-files-found: error
