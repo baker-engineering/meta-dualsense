@@ -185,6 +185,16 @@ int config_load(struct config *c, const char *path) {
                     if (j < 0) j = 0;
                     if (j > 1) j = 1;
                     c->burst_jitter[act] = j;
+                } else if (strcmp(field,"duty_jitter")==0) {
+                    double j = atof(v);
+                    if (j < 0) j = 0;
+                    if (j > 1) j = 1;
+                    c->burst_duty_jitter[act] = j;
+                } else if (strcmp(field,"skip_prob")==0) {
+                    double s = atof(v);
+                    if (s < 0) s = 0;
+                    if (s > 1) s = 1;
+                    c->burst_skip_prob[act] = s;
                 } else {
                     fprintf(stderr, "kbm-mapper: %s:%d: unknown burst field '%s'\n", path, lineno, field);
                 }

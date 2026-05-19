@@ -29,13 +29,34 @@ struct config {
     /* Burst-on-hold: while an action's source input is held, oscillate the
      * reported action at burst_hz[a] Hz with burst_duty[a] high-time fraction.
      * burst_hz <= 0 disables burst for that action (the default — hold acts
-     * like a normal sustained press). burst_jitter[a] in [0, 1] adds a
-     * deterministic per-cycle perturbation of +/- (jitter * 100)% to both
-     * the cycle length and the duty fraction, so a held burst does not
-     * present a perfectly periodic input pattern. Indexed by DS action id. */
+     * like a normal sustained press). Indexed by DS action id.
+     *
+     * Cadence realism knobs, all per-cycle and deterministic given the press
+     * start time so is_active stays a pure function of (action, now_ns):
+     *
+     *   burst_jitter[a]      sigma of a lognormal multiplier on cycle length.
+     *                        A clockwork 10 Hz with sigma 0.25 gives intervals
+     *                        whose log is N(0, 0.25), i.e. occasional 1.5x or
+     *                        0.6x gaps, matching a human's long-tailed click
+     *                        interval distribution far better than uniform
+     *                        +/- noise. 0 disables (clockwork).
+     *   burst_duty_jitter[a] sigma of a lognormal multiplier on the duty
+     *                        fraction. Spreads press durations so the
+     *                        press-time histogram is not a tight spike.
+     *   burst_skip_prob[a]   probability in [0, 1] of dropping a cycle's
+     *                        press entirely (the cycle is silent — a full
+     *                        interval-long gap with no click). Models the
+     *                        human "I meant to click but didn't" miss.
+     *
+     * Together these break the three statistical fingerprints that anti-
+     * cheat heuristics latch onto on a click-cadence FFT: the sharp peak
+     * at burst_hz, the tight press-duration cluster, and the absence of
+     * dropped clicks. */
     double burst_hz[DS_ACT_MAX];
     double burst_duty[DS_ACT_MAX];
     double burst_jitter[DS_ACT_MAX];
+    double burst_duty_jitter[DS_ACT_MAX];
+    double burst_skip_prob[DS_ACT_MAX];
 
     /* Mode-toggle hotkey: list of Linux KEY_* codes that must all be held
      * simultaneously for >=1s to trigger a switch between emulation and

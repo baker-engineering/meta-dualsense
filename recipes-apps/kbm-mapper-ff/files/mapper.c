@@ -38,28 +38,42 @@ static void burst_tick(struct mapper *m, int64_t now_ns) {
     }
 }
 
-/* Deterministic per-cycle jitter: derive a stable [-1, 1] perturbation from
- * a cycle index. Same cycle index always produces the same value, so
- * is_active stays a pure function of (action, now_ns). xorshift-style
- * mixing is enough — we are smoothing a pattern, not rolling dice. */
-static double burst_cycle_jitter(int64_t cycle_idx, uint64_t salt) {
+/* Deterministic per-cycle uniform in [0, 1). Same (cycle, salt) always
+ * produces the same value, so is_active stays a pure function of
+ * (action, now_ns). xorshift-style mixing is enough — we are sampling a
+ * distribution to look human, not generating cryptographic randomness. */
+static double burst_cycle_uniform(int64_t cycle_idx, uint64_t salt) {
     uint64_t x = (uint64_t)cycle_idx * 0x9e3779b97f4a7c15ULL ^ salt;
     x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
     x ^= x >> 27; x *= 0x94d049bb133111ebULL;
     x ^= x >> 31;
-    int64_t s = (int64_t)x;
-    return (double)s / (double)INT64_MAX;
+    return (double)((x >> 11) & ((1ULL<<53)-1)) / (double)(1ULL<<53);
+}
+
+/* Standard normal sample via Box-Muller from two independent uniforms,
+ * each derived from a distinct salt so the two uniforms are uncorrelated. */
+static double burst_cycle_normal(int64_t cycle_idx, uint64_t salt) {
+    double u1 = burst_cycle_uniform(cycle_idx, salt);
+    double u2 = burst_cycle_uniform(cycle_idx, salt ^ 0xb7e151628aed2a6bULL);
+    if (u1 < 1e-12) u1 = 1e-12;
+    return sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
 }
 
 /* is_active is is_pressed gated by burst-on-hold: if burst_hz[a] > 0 and the
  * action is currently held, this returns true only during the high portion of
  * each oscillator cycle. burst_hz <= 0 is treated as a normal sustained press.
  *
- * If burst_jitter[a] > 0, per-cycle cycle length and duty fraction are each
- * perturbed by +/- (jitter * 100)%. The result still oscillates around the
- * configured rate but does not present a perfectly periodic pattern; anti-
- * cheat heuristics that look for machine-like input cadences are less likely
- * to flag a jittered burst than a clockwork one.
+ * The cadence model is three independent realism knobs (see config.h for
+ * the full rationale). All are off by default and the function takes a
+ * fast clockwork path when nothing is enabled:
+ *
+ *   burst_jitter[a]      lognormal sigma on cycle interval: a clockwork
+ *                        period of 1/hz becomes (1/hz) * exp(sigma * N(0,1)),
+ *                        producing a long-tailed click-interval distribution
+ *                        instead of a uniform window around the mean.
+ *   burst_duty_jitter[a] lognormal sigma on the duty fraction per cycle.
+ *   burst_skip_prob[a]   per-cycle probability of dropping the click
+ *                        (cycle becomes a silent gap).
  *
  * Used only for digital actions (buttons + analog triggers reported digitally).
  * Stick directions go through is_pressed because oscillating a stick axis
@@ -76,28 +90,51 @@ static bool is_active(const struct mapper *m, enum ds_action a, int64_t now_ns) 
     int64_t since = now_ns - m->pressed_since_ns[a];
     if (since < 0) since = 0;
 
-    double jitter = m->cfg->burst_jitter[a];
-    if (jitter <= 0) {
+    double jitter      = m->cfg->burst_jitter[a];
+    double duty_jitter = m->cfg->burst_duty_jitter[a];
+    double skip_prob   = m->cfg->burst_skip_prob[a];
+
+    if (jitter <= 0 && duty_jitter <= 0 && skip_prob <= 0) {
+        /* Clockwork fast path. */
         int64_t phase = since % base_cycle_ns;
         return phase < (int64_t)(base_cycle_ns * duty);
     }
 
-    /* Walk forward through cycles, accumulating jittered widths. The
+    /* Walk forward through cycles, accumulating per-cycle widths. The
      * action id is salted in so different actions with the same hz get
-     * independent patterns. Bound the loop to keep cost predictable even
-     * on a multi-minute trigger hold; after 4096 cycles fall back to
-     * nominal phase (which on an 8 Hz burst is ~8.5 minutes of sustained
-     * fire, far longer than any real engagement). */
-    uint64_t salt = (uint64_t)a * 0x100000001b3ULL;
+     * independent patterns. Each field gets its own salt so duty noise
+     * is uncorrelated with interval noise and the skip lottery.
+     * Bound the loop to keep cost predictable even on a multi-minute
+     * trigger hold; after 4096 cycles fall back to nominal phase. */
+    uint64_t salt_iv = (uint64_t)a * 0x100000001b3ULL;
+    uint64_t salt_dt = salt_iv ^ 0xa5a5a5a5a5a5a5a5ULL;
+    uint64_t salt_sk = salt_iv ^ 0x5a5a5a5a5a5a5a5aULL;
     int64_t cum = 0;
     for (int64_t ci = 0; ci < 4096; ci++) {
-        double rc = burst_cycle_jitter(ci, salt);
-        int64_t this_cycle = (int64_t)(base_cycle_ns * (1.0 + rc * jitter));
+        /* Lognormal interval multiplier, clamped so a tail draw doesn't
+         * silently produce a multi-second gap that looks worse than a
+         * clockwork burst would. */
+        double mult = 1.0;
+        if (jitter > 0) {
+            double n = burst_cycle_normal(ci, salt_iv);
+            mult = exp(jitter * n);
+            if (mult < 0.25) mult = 0.25;
+            if (mult > 4.0)  mult = 4.0;
+        }
+        int64_t this_cycle = (int64_t)(base_cycle_ns * mult);
         if (this_cycle <= 0) this_cycle = 1;
         int64_t next_cum = cum + this_cycle;
         if (since < next_cum) {
-            double rd = burst_cycle_jitter(ci, salt ^ 0xa5a5a5a5a5a5a5a5ULL);
-            double effective_duty = duty * (1.0 + rd * jitter);
+            /* Drop the whole cycle with skip_prob — a silent miss. */
+            if (skip_prob > 0 &&
+                burst_cycle_uniform(ci, salt_sk) < skip_prob) {
+                return false;
+            }
+            double effective_duty = duty;
+            if (duty_jitter > 0) {
+                double n = burst_cycle_normal(ci, salt_dt);
+                effective_duty = duty * exp(duty_jitter * n);
+            }
             if (effective_duty < 0.05) effective_duty = 0.05;
             if (effective_duty > 0.95) effective_duty = 0.95;
             int64_t on_time = (int64_t)(this_cycle * effective_duty);
