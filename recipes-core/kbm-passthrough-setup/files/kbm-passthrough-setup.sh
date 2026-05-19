@@ -78,6 +78,11 @@ PROD="USB Composite Device"
 SERIAL="00000000"
 
 src_mouse=$(find_usb_hid_parent 2 || true)
+# STRINGS_SOURCE marks which identity branch the gadget ended up using. It
+# is consumed by kbm-web's /api/status (gadget_descriptor.strings_source) so
+# strict-API callers can verify identity-clone success without eyeballing
+# the host's usbview.
+STRINGS_SOURCE="fallback-generic"
 if [ -n "${src_mouse:-}" ]; then
     vid_hex=$(read_sysfs_str "$src_mouse/idVendor")
     pid_hex=$(read_sysfs_str "$src_mouse/idProduct")
@@ -91,10 +96,12 @@ if [ -n "${src_mouse:-}" ]; then
     [ -n "$prod" ]   && PROD="$prod"
     serial=$(read_sysfs_str "$src_mouse/serial")
     [ -n "$serial" ] && SERIAL="$serial"
+    STRINGS_SOURCE="cloned-from-mouse"
     echo "kbm-passthrough-setup: cloned identity from $src_mouse ($VID:$PID '$MFG' / '$PROD')"
 else
     echo "kbm-passthrough-setup: no source mouse enumerated, using fictional identity ($VID:$PID)"
 fi
+echo "$STRINGS_SOURCE" > /run/kbm-passthrough-gadget-strings-source
 
 mkdir -p "$GADGET"
 echo "$VID"    > "$GADGET/idVendor"
