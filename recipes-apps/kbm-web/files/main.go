@@ -66,15 +66,20 @@ type Binding struct {
 // Burst describes burst-on-hold for one DualSense action. While the source
 // input is held the mapper oscillates the reported action at Hz with the
 // given duty fraction (0..1). Hz <= 0 means disabled.
+//
+// The three realism fields are independent and all default to 0 (= clockwork).
+// Daemon-side semantics are documented in kbm-mapper-ff config.h; in summary:
+//
+//	Jitter      lognormal sigma on the cycle interval (long-tailed gaps)
+//	DutyJitter  lognormal sigma on the duty fraction per cycle
+//	SkipProb    probability in [0, 1] of dropping a cycle's click entirely
 type Burst struct {
-	Action string  `json:"action"`
-	Hz     float64 `json:"hz"`
-	Duty   float64 `json:"duty"`
-	// Jitter in [0, 1]: per-cycle perturbation of cycle length and duty
-	// by +/- (jitter * 100)%. Makes a held burst non-periodic so it does
-	// not present a machine-clean cadence to anti-cheat heuristics. 0
-	// disables (clockwork burst).
-	Jitter float64 `json:"jitter"`
+	Action     string  `json:"action"`
+	Hz         float64 `json:"hz"`
+	Duty       float64 `json:"duty"`
+	Jitter     float64 `json:"jitter"`
+	DutyJitter float64 `json:"duty_jitter"`
+	SkipProb   float64 `json:"skip_prob"`
 }
 
 type Config struct {
@@ -303,7 +308,8 @@ func loadConfig() (*Config, error) {
 			} else if rest, ok := strings.CutPrefix(k, "mouse."); ok {
 				c.Bindings = append(c.Bindings, Binding{Source: "mouse", Code: rest, Action: v})
 			} else if rest, ok := strings.CutPrefix(k, "burst."); ok {
-				// "burst.<action>.<field>", field in {hz, duty, jitter}
+				// "burst.<action>.<field>", field in {hz, duty, jitter,
+				// duty_jitter, skip_prob}
 				dot := strings.LastIndexByte(rest, '.')
 				if dot < 0 {
 					continue
@@ -318,6 +324,10 @@ func loadConfig() (*Config, error) {
 					b.Duty = parseF(v)
 				case "jitter":
 					b.Jitter = parseF(v)
+				case "duty_jitter":
+					b.DutyJitter = parseF(v)
+				case "skip_prob":
+					b.SkipProb = parseF(v)
 				}
 			} else if k == "hotkey.mode_toggle" {
 				c.Hotkey = nil
@@ -422,6 +432,12 @@ func saveConfig(c *Config) error {
 		}
 		if br.Jitter > 0 {
 			fmt.Fprintf(&b, "burst.%s.jitter=%g\n", br.Action, br.Jitter)
+		}
+		if br.DutyJitter > 0 {
+			fmt.Fprintf(&b, "burst.%s.duty_jitter=%g\n", br.Action, br.DutyJitter)
+		}
+		if br.SkipProb > 0 {
+			fmt.Fprintf(&b, "burst.%s.skip_prob=%g\n", br.Action, br.SkipProb)
 		}
 	}
 	if len(c.Hotkey) > 0 {
