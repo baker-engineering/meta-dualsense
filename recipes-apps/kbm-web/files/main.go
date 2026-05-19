@@ -92,18 +92,41 @@ type Config struct {
 	Hotkey []string `json:"hotkey"`
 }
 
+// GadgetDescriptor is the device-level USB descriptor view that callers can
+// assert against. Only populated when mode == "passthrough": the emulation
+// gadget is FunctionFS with a daemon-managed descriptor whose strings do not
+// live in configfs. StringsSource indicates whether kbm-passthrough-setup.sh
+// successfully cloned identifiers from the BBB-attached source mouse
+// ("cloned-from-mouse") or fell back to the fictional pid.codes test PID
+// ("fallback-generic"). Strict-API callers can use that field to verify the
+// identity-clone path worked without eyeballing usbview on the host.
+type GadgetDescriptor struct {
+	VID           string `json:"vid"`
+	PID           string `json:"pid"`
+	Manufacturer  string `json:"manufacturer"`
+	Product       string `json:"product"`
+	Serial        string `json:"serial"`
+	StringsSource string `json:"strings_source"` // "cloned-from-mouse" | "fallback-generic" | ""
+}
+
 type Status struct {
-	Hostname     string   `json:"hostname"`
-	GadgetUDC    string   `json:"gadget_udc"`
-	UDCState     string   `json:"udc_state"`
-	UDCSpeed     string   `json:"udc_speed"`
-	HidgPresent  bool     `json:"hidg_present"`
-	ReportDesc   int64    `json:"report_desc_size"`
-	InputDevices []string `json:"input_devices"`
-	Mode         string   `json:"mode"` // "emulation" | "passthrough" | "off"
-	GadgetActive string   `json:"gadget_service"`
-	MapperActive string   `json:"mapper_service"`
-	Version      string   `json:"version"`
+	Hostname     string            `json:"hostname"`
+	GadgetUDC    string            `json:"gadget_udc"`
+	UDCState     string            `json:"udc_state"`
+	UDCSpeed     string            `json:"udc_speed"`
+	HidgPresent  bool              `json:"hidg_present"`
+	ReportDesc   int64             `json:"report_desc_size"`
+	InputDevices []string          `json:"input_devices"`
+	Mode         string            `json:"mode"` // "emulation" | "passthrough" | "off"
+	// GadgetActive and MapperActive report the currently-relevant gadget and
+	// mapper systemd units for the active mode (passthrough → kbm-passthrough-
+	// setup + kbm-passthrough; emulation → dualsense-ffs + dualsense-ffsd;
+	// off → both inactive). The JSON field names are kept stable so existing
+	// callers don't have to switch on mode to read service health.
+	GadgetActive     string            `json:"gadget_service"`
+	MapperActive     string            `json:"mapper_service"`
+	GadgetDescriptor *GadgetDescriptor `json:"gadget_descriptor,omitempty"`
+	Version          string            `json:"version"`
 }
 
 var (
@@ -190,19 +213,61 @@ func currentMode() string {
 	return "off"
 }
 
+// modeServiceUnits returns the (gadget, mapper) systemd unit names that own
+// the active gadget for the given mode. Centralising this here keeps the
+// per-mode service identity in one place so Status reporting stays honest
+// when the gadget plumbing changes.
+func modeServiceUnits(mode string) (gadget, mapper string) {
+	switch mode {
+	case "passthrough":
+		return "kbm-passthrough-setup", "kbm-passthrough"
+	case "emulation":
+		return "dualsense-ffs", "dualsense-ffsd"
+	default:
+		return "", ""
+	}
+}
+
+// gadgetDescriptorFromConfigfs reads the device-level VID/PID/strings out of
+// the passthrough configfs gadget tree. Empty fields mean either the gadget
+// isn't bound or kbm-passthrough-setup hasn't written them yet. Returns nil
+// if the gadget root doesn't exist (e.g. emulation or off mode).
+func gadgetDescriptorFromConfigfs() *GadgetDescriptor {
+	root := "/sys/kernel/config/usb_gadget/kbm"
+	if _, err := os.Stat(root); err != nil {
+		return nil
+	}
+	return &GadgetDescriptor{
+		VID:           readTrim(root + "/idVendor"),
+		PID:           readTrim(root + "/idProduct"),
+		Manufacturer:  readTrim(root + "/strings/0x409/manufacturer"),
+		Product:       readTrim(root + "/strings/0x409/product"),
+		Serial:        readTrim(root + "/strings/0x409/serialnumber"),
+		StringsSource: readTrim("/run/kbm-passthrough-gadget-strings-source"),
+	}
+}
+
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	udc := firstUDC()
 	mode := currentMode()
+	gadgetUnit, mapperUnit := modeServiceUnits(mode)
 	s := Status{
 		Hostname:     readTrim("/proc/sys/kernel/hostname"),
 		GadgetUDC:    readTrim("/sys/kernel/config/usb_gadget/dualsense/UDC"),
 		Version:      buildVersion,
 		Mode:         mode,
-		GadgetActive: systemctlIsActive("dualsense-ffs"),
-		MapperActive: systemctlIsActive("dualsense-ffsd"),
+		GadgetActive: "inactive",
+		MapperActive: "inactive",
+	}
+	if gadgetUnit != "" {
+		s.GadgetActive = systemctlIsActive(gadgetUnit)
+	}
+	if mapperUnit != "" {
+		s.MapperActive = systemctlIsActive(mapperUnit)
 	}
 	if mode == "passthrough" {
 		s.GadgetUDC = readTrim("/sys/kernel/config/usb_gadget/kbm/UDC")
+		s.GadgetDescriptor = gadgetDescriptorFromConfigfs()
 	}
 	if udc != "" {
 		s.UDCState = readTrim("/sys/class/udc/" + udc + "/state")
