@@ -1,0 +1,53 @@
+From: Tyler Baker <tyler@baker.engineering>
+Subject: [PATCH] usb: gadget: f_hid: drop full-speed bInterval to 1 ms
+
+Upstream-Status: Inappropriate [system-specific tuning]
+
+f_hid.c hardcodes bInterval = 10 on the full-speed interrupt endpoints,
+so a configfs HID gadget on a FS-only controller (the AM335x MUSB on
+this board) is polled at 100 Hz. That is a conservative default for a
+generic HID device — a typical keyboard does not benefit from anything
+faster — but for input devices whose value lies in the cadence (gaming
+mice and controllers) the host-side poll rate is itself a fingerprint:
+every modern retail gaming mouse polls at 1000 Hz, and a 100 Hz device
+is trivially identifiable as "not a real gaming mouse" by any code
+that reads the endpoint descriptor.
+
+This board is a dedicated HID-passthrough appliance whose entire
+purpose is to forward gaming input. Drop bInterval to 1 (1 ms = 1000
+Hz) on both FS interrupt endpoints. USB bandwidth is not a constraint:
+1000 Hz x (8 byte keyboard report + 4 byte mouse report) = 12 KB/s on
+a 12 Mbps bus, well under 1% utilisation. The gadget only emits a
+report when there is new input to send, so the host simply NAKs on
+empty polls — the change raises the cadence ceiling, it does not
+force a fixed packet rate.
+
+The upstream FIXME above each endpoint descriptor asks for this to
+become a configfs attribute. Until that lands in mainline this is a
+two-line tree-local change that matches what this layer needs.
+
+Signed-off-by: Tyler Baker <tyler@baker.engineering>
+---
+ drivers/usb/gadget/function/f_hid.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/usb/gadget/function/f_hid.c
++++ b/drivers/usb/gadget/function/f_hid.c
+@@ -233,7 +233,7 @@ static struct usb_endpoint_descriptor hidg_fs_in_ep_desc = {
+ 	.bEndpointAddress	= USB_DIR_IN,
+ 	.bmAttributes		= USB_ENDPOINT_XFER_INT,
+ 	/*.wMaxPacketSize	= DYNAMIC */
+-	.bInterval		= 10, /* FIXME: Add this field in the
++	.bInterval		= 1,  /* FIXME: Add this field in the
+ 				       * HID gadget configuration?
+ 				       * (struct hidg_func_descriptor)
+ 				       */
+@@ -245,7 +245,7 @@ static struct usb_endpoint_descriptor hidg_fs_out_ep_desc = {
+ 	.bEndpointAddress	= USB_DIR_OUT,
+ 	.bmAttributes		= USB_ENDPOINT_XFER_INT,
+ 	/*.wMaxPacketSize	= DYNAMIC */
+-	.bInterval		= 10, /* FIXME: Add this field in the
++	.bInterval		= 1,  /* FIXME: Add this field in the
+ 				       * HID gadget configuration?
+ 				       * (struct hidg_func_descriptor)
+ 				       */
