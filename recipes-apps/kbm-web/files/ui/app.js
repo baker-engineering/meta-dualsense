@@ -256,6 +256,9 @@ function renderBursts() {
     tr.innerHTML = `<td>${actionLabel(br.action)}</td>` +
                    `<td>${br.hz}</td>` +
                    `<td>${br.duty || 0.5}</td>` +
+                   `<td>${br.jitter || 0}</td>` +
+                   `<td>${br.duty_jitter || 0}</td>` +
+                   `<td>${br.skip_prob || 0}</td>` +
                    `<td style="text-align:right"><button data-i="${i}">×</button></td>`;
     tr.querySelector('button').addEventListener('click', () => { conf.bursts.splice(i,1); renderBursts(); });
     tb.appendChild(tr);
@@ -264,18 +267,37 @@ function renderBursts() {
   if (!sel.options.length) sel.innerHTML = ACTIONS.map(a => `<option value="${a}">${actionLabel(a)}</option>`).join('');
 }
 
+// clamp01 returns v clamped to [0, 1] or 0 if v is NaN/empty.
+function clamp01(v) {
+  if (isNaN(v) || v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
 $('btn-add-burst').addEventListener('click', () => {
   if (!conf) return;
-  const action = $('burst-action').value;
-  const hz = parseFloat($('burst-hz').value);
-  const duty = parseFloat($('burst-duty').value);
+  const action     = $('burst-action').value;
+  const hz         = parseFloat($('burst-hz').value);
+  const duty       = parseFloat($('burst-duty').value);
+  const jitter     = parseFloat($('burst-jitter').value);
+  const dutyJitter = parseFloat($('burst-duty-jitter').value);
+  const skipProb   = parseFloat($('burst-skip-prob').value);
   if (!action || !(hz > 0)) { alert('Pick an action and an hz > 0.'); return; }
   const i = conf.bursts.findIndex(b => b.action === action);
-  const entry = { action, hz, duty: isNaN(duty) || duty <= 0 ? 0.5 : Math.min(1, duty) };
+  const entry = {
+    action, hz,
+    duty:        isNaN(duty) || duty <= 0 ? 0.5 : Math.min(1, duty),
+    jitter:      clamp01(jitter),
+    duty_jitter: clamp01(dutyJitter),
+    skip_prob:   clamp01(skipProb),
+  };
   if (i >= 0) conf.bursts[i] = entry;
   else        conf.bursts.push(entry);
-  $('burst-hz').value = '';
-  $('burst-duty').value = '';
+  $('burst-hz').value          = '';
+  $('burst-duty').value        = '';
+  $('burst-jitter').value      = '';
+  $('burst-duty-jitter').value = '';
+  $('burst-skip-prob').value   = '';
   renderBursts();
 });
 
