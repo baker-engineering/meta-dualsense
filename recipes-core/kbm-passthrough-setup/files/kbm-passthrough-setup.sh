@@ -23,20 +23,92 @@ for g in /sys/kernel/config/usb_gadget/*; do
     rmdir "$g" 2>/dev/null || true
 done
 
-# pid.codes Test PID range — explicitly fictional, not a real product.
+# Clone the device-level identity from the BBB-attached source mouse.
+# Rationale: a composite USB gadget exposes ONE device-level VID/PID and
+# one set of strings; the two HID interfaces (keyboard + mouse) sit under
+# it. We pick the mouse for the device descriptor because the host sees
+# the composite as "one mouse-like device that also has a keyboard
+# interface" — exactly what plenty of Logitech / Razer composite
+# receivers look like — and because the burst-on-hold use case is mouse-
+# side. The host never sees the source keyboard's VID/PID at the device
+# level even in passthrough; both source devices' inputs are forwarded
+# through interfaces under one device descriptor regardless of policy.
+#
+# Falls back to the pid.codes Test PID range with generic strings if no
+# source mouse is enumerated when this runs (e.g. a first boot before
+# any host-side USB device has been plugged in). pid.codes is the
+# canonical fictional-VID range for hobbyist USB devices.
+#
+# Note: bDeviceClass stays 0 (composite, use interface descriptors) even
+# when the source mouse is HID-class — declaring this device HID-only at
+# the top level would conflict with us having two HID interfaces under
+# one composite config.
+
+find_usb_hid_parent() {
+    # $1 = HID protocol byte: 1 = keyboard, 2 = mouse.
+    # Walks USB interface entries (paths containing ':') and returns the
+    # parent device path of the first matching interface. Accepts any
+    # subclass so gaming mice without a boot interface still match.
+    local proto="$1" iface parent
+    for iface in /sys/bus/usb/devices/*:*; do
+        [ -e "$iface/bInterfaceClass"    ] || continue
+        [ -e "$iface/bInterfaceProtocol" ] || continue
+        [ "$(cat "$iface/bInterfaceClass")"    = "03"    ] || continue
+        [ "$(cat "$iface/bInterfaceProtocol")" = "0$proto" ] || continue
+        parent=$(readlink -f "$iface/..") || continue
+        [ -e "$parent/idVendor" ] || continue
+        echo "$parent"
+        return 0
+    done
+    return 1
+}
+
+# Strip the trailing newline from a sysfs string file. Returns empty if
+# the file is absent.
+read_sysfs_str() {
+    [ -f "$1" ] || return 0
+    tr -d '\n' < "$1"
+}
+
+VID=0x1209
+PID=0x0001
+BCDDEV=0x0100
+MFG="Generic"
+PROD="USB Composite Device"
+SERIAL="00000000"
+
+src_mouse=$(find_usb_hid_parent 2 || true)
+if [ -n "${src_mouse:-}" ]; then
+    vid_hex=$(read_sysfs_str "$src_mouse/idVendor")
+    pid_hex=$(read_sysfs_str "$src_mouse/idProduct")
+    bcd_hex=$(read_sysfs_str "$src_mouse/bcdDevice")
+    [ -n "$vid_hex" ] && VID="0x$vid_hex"
+    [ -n "$pid_hex" ] && PID="0x$pid_hex"
+    [ -n "$bcd_hex" ] && BCDDEV="0x$bcd_hex"
+    mfg=$(read_sysfs_str "$src_mouse/manufacturer")
+    [ -n "$mfg" ]    && MFG="$mfg"
+    prod=$(read_sysfs_str "$src_mouse/product")
+    [ -n "$prod" ]   && PROD="$prod"
+    serial=$(read_sysfs_str "$src_mouse/serial")
+    [ -n "$serial" ] && SERIAL="$serial"
+    echo "kbm-passthrough-setup: cloned identity from $src_mouse ($VID:$PID '$MFG' / '$PROD')"
+else
+    echo "kbm-passthrough-setup: no source mouse enumerated, using fictional identity ($VID:$PID)"
+fi
+
 mkdir -p "$GADGET"
-echo 0x1209 > "$GADGET/idVendor"
-echo 0x0001 > "$GADGET/idProduct"
-echo 0x0100 > "$GADGET/bcdDevice"
-echo 0x0200 > "$GADGET/bcdUSB"
-echo 0x00   > "$GADGET/bDeviceClass"
-echo 0x00   > "$GADGET/bDeviceSubClass"
-echo 0x00   > "$GADGET/bDeviceProtocol"
+echo "$VID"    > "$GADGET/idVendor"
+echo "$PID"    > "$GADGET/idProduct"
+echo "$BCDDEV" > "$GADGET/bcdDevice"
+echo 0x0200    > "$GADGET/bcdUSB"
+echo 0x00      > "$GADGET/bDeviceClass"
+echo 0x00      > "$GADGET/bDeviceSubClass"
+echo 0x00      > "$GADGET/bDeviceProtocol"
 
 mkdir -p "$GADGET/strings/0x409"
-echo "Baker Engineering"           > "$GADGET/strings/0x409/manufacturer"
-echo "DualSense Keyboard and Mouse" > "$GADGET/strings/0x409/product"
-echo "00000000"                    > "$GADGET/strings/0x409/serialnumber"
+echo "$MFG"    > "$GADGET/strings/0x409/manufacturer"
+echo "$PROD"   > "$GADGET/strings/0x409/product"
+echo "$SERIAL" > "$GADGET/strings/0x409/serialnumber"
 
 # Boot keyboard: 8 byte report (1 modifiers, 1 reserved, 6 keys).
 mkdir -p "$GADGET/functions/hid.usb0"
